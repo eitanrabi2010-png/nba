@@ -1,0 +1,95 @@
+function fetchPlayers() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // פותח או יוצר לשונית בשם Players
+  let sheet = ss.getSheetByName('Players');
+  if (!sheet) {
+    sheet = ss.insertSheet('Players');
+  }
+  
+  // מעביר אותך ויזואלית לטאב Players
+  sheet.activate();
+
+  const url = 'https://api.balldontlie.io/v1/players?per_page=50';
+  
+  const response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { 'Authorization': API_KEY },
+    muteHttpExceptions: true
+  });
+
+  const json = JSON.parse(response.getContentText());
+  const players = json.data;
+
+  if (!players || players.length === 0) {
+    SpreadsheetApp.getUi().alert('לא התקבלו שחקנים');
+    return;
+  }
+
+  const rows = players.map((p, index) => {
+    const name = ((p.first_name || '') + ' ' + (p.last_name || '')).trim();
+    const pos = p.position || '-';
+    const team = p.team ? (p.team.full_name || p.team.name || '-') : '-';
+    
+    let height = p.height || '';
+    if (!height && (p.height_feet || p.height_inches)) {
+      height = (p.height_feet || 0) + "'" + (p.height_inches || 0) + '"';
+    }
+    if (!height) height = '-';
+
+    const weight = p.weight || '-';
+
+    return [index + 1, name, pos, team, height, weight];
+  });
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, 6).setValues([['#', 'שם', 'עמדה', 'קבוצה', 'גובה', 'משקל']]);
+  sheet.getRange(2, 1, rows.length, 6).setValues(rows);
+
+  SpreadsheetApp.getUi().alert('הצלחה! נכתבו ' + rows.length + ' שורות בגיליון: "' + sheet.getName() + '"');
+}
+function doGet(e) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Players') || ss.getSheets()[0];
+    
+    // שליפת כל הנתונים מהגיליון
+    const data = sheet.getDataRange().getValues();
+    
+    if (data.length <= 1) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        message: 'No data found'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // השורה הראשונה היא הכותרות (Headers)
+    const headers = data[0];
+    const rows = data.slice(1);
+
+    // המרת השורות לאובייקטים בפורמט JSON
+    const result = rows.map(row => {
+      let obj = {};
+      headers.forEach((header, index) => {
+        obj[header] = row[index];
+      });
+      return obj;
+    });
+
+    // החזרת תשובת JSON מובנית
+    const output = JSON.stringify({
+      status: 'success',
+      total: result.length,
+      data: result
+    });
+
+    return ContentService.createTextOutput(output)
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'error',
+      message: error.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
